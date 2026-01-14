@@ -97,4 +97,3 @@ protected:
 };
 
 #endif // CIV5_SITE_EVALUATION_CLASSES_H
-

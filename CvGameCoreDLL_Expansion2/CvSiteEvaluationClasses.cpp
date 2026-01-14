@@ -659,7 +659,7 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(
           if (pkEntry->GetTerrainMakesValid(TERRAIN_SNOW))
             iCivModifier += iSnowCount * m_iChukchiMultiplier;
           else if (pkEntry->GetTerrainMakesValid(TERRAIN_TUNDRA))
-            iCivModifier += iTundraCount * m_iChukchiMultiplier;
+            iCivModifier += iTerrainCount * m_iChukchiMultiplier;
 
           if (pDebug)
             vQualifiersPositive.push_back("(C) chukchi");
