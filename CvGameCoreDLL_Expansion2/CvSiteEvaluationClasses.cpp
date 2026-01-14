@@ -649,7 +649,8 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(
     // better approach would be to add a lua boolean like WantsSnow, or get info
     // from Civilization_Start_Prefer_Snow
     static ImprovementTypes eChukchiImprovement =
-        (ImprovementTypes)GC.getInfoTypeForString("IMPROVEMENT_FARM", true);
+        (ImprovementTypes)GC.getInfoTypeForString("IMPROVEMENT_CHU_UI_YARANGA",
+                                                  true);
     if (eChukchiImprovement != NO_IMPROVEMENT) {
       CvImprovementEntry *pkEntry = GC.getImprovementInfo(eChukchiImprovement);
       if (pkEntry != NULL && pkEntry->IsSpecificCivRequired()) {
