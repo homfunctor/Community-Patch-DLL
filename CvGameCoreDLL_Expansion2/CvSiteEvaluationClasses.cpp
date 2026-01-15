@@ -327,6 +327,7 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(CvPlot* pPlot, const CvPlayer* pPl
 	int iWetlandsCount = 0;
 	int iFloodPlainsCount = 0;
 	int iIncaHillsCount = 0;
+  int iIceCount = 0;
   int iSnowCount = 0;
   int iTundraCount = 0;
 
@@ -525,6 +526,10 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(CvPlot* pPlot, const CvPlayer* pPl
 			++iDesertCount;
 		}
 
+    if (pLoopPlot->getFeatureType() == FEATURE_ICE) {
+      ++iIceCount;
+    }
+
     if (pLoopPlot->getTerrainType() == TERRAIN_SNOW) {
       ++iSnowCount;
     }
@@ -676,13 +681,11 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(CvPlot* pPlot, const CvPlayer* pPl
       if (pkEntry != NULL && pkEntry->IsSpecificCivRequired()) {
         CivilizationTypes eCiv = pkEntry->GetRequiredCivilization();
         if (eCiv == pPlayer->getCivilizationType()) {
-          if (pkEntry->GetTerrainMakesValid(TERRAIN_SNOW))
+            iCivModifier += iIceCount * m_iChukchiMultiplier;
             iCivModifier += iSnowCount * m_iChukchiMultiplier;
-          else if (pkEntry->GetTerrainMakesValid(TERRAIN_TUNDRA))
             iCivModifier += iTundraCount * m_iChukchiMultiplier;
-
-          if (pDebug)
-            vQualifiersPositive.push_back("(C) chukchi");
+        if (pDebug)
+          vQualifiersPositive.push_back("(C) chukchi");
         }
       }
     }	}
@@ -1204,7 +1207,7 @@ CvSiteEvaluatorForSettler::CvSiteEvaluatorForSettler(void)
 	m_iFranceMultiplier = 1000; //fertility boost from resources
 	m_iNetherlandsMultiplier = 2000; //fertility boost from marshes and/or flood plains
 	m_iIncaMultiplier = 100; //fertility boost for hill tiles surrounded my mountains
-  m_iChukchiMultiplier = 1000000;
+  m_iChukchiMultiplier = 10000;
 }
 
 /// Destructor
