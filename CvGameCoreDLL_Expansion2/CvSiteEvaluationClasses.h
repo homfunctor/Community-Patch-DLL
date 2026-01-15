@@ -93,7 +93,6 @@ protected:
   int m_iFranceMultiplier;
   int m_iNetherlandsMultiplier;
   int m_iIncaMultiplier;
-  int m_iChukchiMultiplier;
 };
 
 #endif // CIV5_SITE_EVALUATION_CLASSES_H

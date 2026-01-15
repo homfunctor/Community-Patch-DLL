@@ -303,8 +303,6 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(
   int iWetlandsCount = 0;
   int iFloodPlainsCount = 0;
   int iIncaHillsCount = 0;
-  int iSnowCount = 0;
-  int iTundraCount = 0;
 
   int iLakeCount = 0;
   int iResourceLuxuryCount = 0;
@@ -451,8 +449,8 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(
     // if this tile is a NW boost the value
     if (pLoopPlot->IsNaturalWonder() && iPlotValue > 0)
       iPlotValue *= 10; //(from 3) yields will improve in later eras but we're
-                        // gonna like SUPER boost its value cuz humans
-                        // over-value it like it's some sort of monopoly!
+                        //gonna like SUPER boost its value cuz humans over-value
+                        //it like it's some sort of monopoly!
 
     // lower value a lot if we or somebody else already own this tile
     if (iPlotValue > 0 && pLoopPlot->getOwner() != NO_PLAYER)
@@ -505,13 +503,6 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(
     if (pLoopPlot->getTerrainType() == TERRAIN_DESERT &&
         eResource == NO_RESOURCE) {
       ++iDesertCount;
-    }
-
-    if (pLoopPlot->getTerrainType() == TERRAIN_SNOW) {
-      ++iSnowCount;
-    }
-    if (pLoopPlot->getTerrainType() == TERRAIN_TUNDRA) {
-      ++iTundraCount;
     }
 
     if (pLoopPlot->isMountain() && pPlayer &&
@@ -641,28 +632,6 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(
           iCivModifier += (iIncaHillsCount * m_iIncaMultiplier);
           if (pDebug)
             vQualifiersPositive.push_back("(C) hills");
-        }
-      }
-    }
-
-    // Custom code for Chukchi auto-play games
-    // better approach would be to add a lua boolean like WantsSnow, or get info
-    // from Civilization_Start_Prefer_Snow
-    static ImprovementTypes eChukchiImprovement =
-        (ImprovementTypes)GC.getInfoTypeForString("IMPROVEMENT_CHU_UI_YARANGA",
-                                                  true);
-    if (eChukchiImprovement != NO_IMPROVEMENT) {
-      CvImprovementEntry *pkEntry = GC.getImprovementInfo(eChukchiImprovement);
-      if (pkEntry != NULL && pkEntry->IsSpecificCivRequired()) {
-        CivilizationTypes eCiv = pkEntry->GetRequiredCivilization();
-        if (eCiv == pPlayer->getCivilizationType()) {
-          if (pkEntry->GetTerrainMakesValid(TERRAIN_SNOW))
-            iCivModifier += iSnowCount * m_iChukchiMultiplier;
-          else if (pkEntry->GetTerrainMakesValid(TERRAIN_TUNDRA))
-            iCivModifier += iTundraCount * m_iChukchiMultiplier;
-
-          if (pDebug)
-            vQualifiersPositive.push_back("(C) chukchi");
         }
       }
     }
@@ -1225,7 +1194,6 @@ CvSiteEvaluatorForSettler::CvSiteEvaluatorForSettler(void) {
       2000; // fertility boost from marshes and/or flood plains
   m_iIncaMultiplier =
       100; // fertility boost for hill tiles surrounded my mountains
-  m_iChukchiMultiplier = 10000;
 }
 
 /// Destructor
