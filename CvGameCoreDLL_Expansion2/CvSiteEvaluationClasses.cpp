@@ -327,6 +327,8 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(CvPlot* pPlot, const CvPlayer* pPl
 	int iWetlandsCount = 0;
 	int iFloodPlainsCount = 0;
 	int iIncaHillsCount = 0;
+  int iSnowCount = 0;
+  int iTundraCount = 0;
 
 	int iLakeCount = 0;
 	int iResourceLuxuryCount = 0;
@@ -523,6 +525,14 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(CvPlot* pPlot, const CvPlayer* pPl
 			++iDesertCount;
 		}
 
+    if (pLoopPlot->getTerrainType() == TERRAIN_SNOW) {
+      ++iSnowCount;
+    }
+
+    if (pLoopPlot->getTerrainType() == TERRAIN_TUNDRA) {
+      ++iTundraCount;
+    }
+
 		if (pLoopPlot->isMountain() && pPlayer && pPlayer->GetPlayerTraits()->IsMountainPass())
 		{
 			int iAdjacentMountains = pLoopPlot->GetNumAdjacentMountains();
@@ -654,7 +664,28 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(CvPlot* pPlot, const CvPlayer* pPl
 				}
 			}
 		}
-	}
+    //
+    // Custom code for Chukchi auto-play games
+    // better approach would be to add a lua boolean like WantsSnow, or get info
+    // from Civilization_Start_Prefer_Snow
+    static ImprovementTypes eChukchiImprovement =
+        (ImprovementTypes)GC.getInfoTypeForString("IMPROVEMENT_CHU_UI_YARANGA",
+                                                  true);
+    if (eChukchiImprovement != NO_IMPROVEMENT) {
+      CvImprovementEntry *pkEntry = GC.getImprovementInfo(eChukchiImprovement);
+      if (pkEntry != NULL && pkEntry->IsSpecificCivRequired()) {
+        CivilizationTypes eCiv = pkEntry->GetRequiredCivilization();
+        if (eCiv == pPlayer->getCivilizationType()) {
+          if (pkEntry->GetTerrainMakesValid(TERRAIN_SNOW))
+            iCivModifier += iSnowCount * m_iChukchiMultiplier;
+          else if (pkEntry->GetTerrainMakesValid(TERRAIN_TUNDRA))
+            iCivModifier += iTundraCount * m_iChukchiMultiplier;
+
+          if (pDebug)
+            vQualifiersPositive.push_back("(C) chukchi");
+        }
+      }
+    }	}
 
 	// Finally, look at the city plot itself
 	if (pPlot->IsNaturalWonder())
@@ -1173,6 +1204,7 @@ CvSiteEvaluatorForSettler::CvSiteEvaluatorForSettler(void)
 	m_iFranceMultiplier = 1000; //fertility boost from resources
 	m_iNetherlandsMultiplier = 2000; //fertility boost from marshes and/or flood plains
 	m_iIncaMultiplier = 100; //fertility boost for hill tiles surrounded my mountains
+  m_iChukchiMultiplier = 10000;
 }
 
 /// Destructor
