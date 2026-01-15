@@ -1204,7 +1204,7 @@ CvSiteEvaluatorForSettler::CvSiteEvaluatorForSettler(void)
 	m_iFranceMultiplier = 1000; //fertility boost from resources
 	m_iNetherlandsMultiplier = 2000; //fertility boost from marshes and/or flood plains
 	m_iIncaMultiplier = 100; //fertility boost for hill tiles surrounded my mountains
-  m_iChukchiMultiplier = 10000;
+  m_iChukchiMultiplier = 1000000;
 }
 
 /// Destructor
