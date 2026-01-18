@@ -4481,11 +4481,11 @@ CvCity* CvPlayer::acquireCity(CvCity* pCity, bool bConquest, bool bGift, bool bO
 			// Human decides what to do with a City
 			else
 			{
-				CvNotifications* pNotify = GetNotifications();
+				pNewCity->SetIgnoreCityForHappiness(true); // Used to display info for annex/puppet/raze popup - turned off in DoCreatePuppet and DoAnnex
 
+				CvNotifications* pNotify = GetNotifications();
 				if (GC.getGame().getActivePlayer() == GetID() && pNotify)
 				{
-					pNewCity->SetIgnoreCityForHappiness(true); // Used to display info for annex/puppet/raze popup - turned off in DoCreatePuppet and DoAnnex
 					int iTemp[5] = { pNewCity->GetID(), iCaptureGold, iCaptureCulture, iCaptureGreatWorks, ePlayerToLiberate };
 					bool bFirstParameter = MOD_BALANCE_VP ? bAllowSphereRemoval : bMinorCivBuyout;
 					bool bTemp[2] = { bFirstParameter, bConquest };
@@ -13309,12 +13309,11 @@ void CvPlayer::AwardFreeBuildings(CvCity* pCity)
 		{
 			if (pCity->SetNumFreeBuilding(eBuilding, 1, bRefund, bValidate))
 				bOwedBuilding = false;
-
-			pCity->SetOwedCultureBuilding(bOwedBuilding);
-			ChangeNumCitiesFreeCultureBuilding(-1);
-			pCity->SetHasFreeCultureBuilding(true);
 		}
 
+		pCity->SetOwedCultureBuilding(bOwedBuilding);
+		ChangeNumCitiesFreeCultureBuilding(-1);
+		pCity->SetHasFreeCultureBuilding(true);
 	}
 
 	int iNumFreeFoodBuildings = GetNumCitiesFreeFoodBuilding();
@@ -13326,12 +13325,11 @@ void CvPlayer::AwardFreeBuildings(CvCity* pCity)
 		{
 			if (pCity->SetNumFreeBuilding(eBuilding, 1, bRefund, bValidate))
 				bOwedBuilding = false;
-
-			pCity->SetOwedFoodBuilding(bOwedBuilding);
-			ChangeNumCitiesFreeFoodBuilding(-1);
-			pCity->SetHasFreeFoodBuilding(true);
 		}
 
+		pCity->SetOwedFoodBuilding(bOwedBuilding);
+		ChangeNumCitiesFreeFoodBuilding(-1);
+		pCity->SetHasFreeFoodBuilding(true);
 	}
 }
 
