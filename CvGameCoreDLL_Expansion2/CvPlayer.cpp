@@ -13333,8 +13333,20 @@ void CvPlayer::AwardFreeBuildings(CvCity* pCity)
 	}
 }
 
-void CvPlayer::SpawnResourceInOwnedLands(ResourceTypes eResource, int iQuantity, bool bSarcophagus, CvCity* pCityToExclude)
+void CvPlayer::SpawnResourceInVicinity(CvCity* pCity, ResourceTypes eResource, int iQuantity, bool bSarcophagus)
 {
+	ASSERT(eResource > NO_RESOURCE && eResource < GC.getNumResourceInfos(), "Calling SpawnResourceInVicinity without a resource");
+	ASSERT(iQuantity > 0, "Calling SpawnResourceInVicinity without a quantity");
+	ASSERT(pCity, "Calling SpawnResourceInVicinity without a target city");
+	if (eResource <= NO_RESOURCE || eResource >= GC.getNumResourceInfos() || iQuantity <= 0 || !pCity)
+		return;
+
+	CvResourceInfo* pkResourceInfo = GC.getResourceInfo(eResource);
+	ASSERT(!pkResourceInfo->isOnlyMinorCivs(), "Calling SpawnResourceInVicinity with a resource exclusive to City-States");
+	ASSERT(pCity->getOwner() == m_eID, "Calling SpawnResourceInVicinity for a different player's city");
+	if (pCity->getOwner() != m_eID || pkResourceInfo->isOnlyMinorCivs())
+		return;
+
 	static const ResourceTypes eArtifact = static_cast<ResourceTypes>(GD_INT_GET(ARTIFACT_RESOURCE));
 	static const ResourceTypes eHiddenArtifact = static_cast<ResourceTypes>(GD_INT_GET(HIDDEN_ARTIFACT_RESOURCE));
 	if (eResource == eArtifact || eResource == eHiddenArtifact)
@@ -13344,26 +13356,31 @@ void CvPlayer::SpawnResourceInOwnedLands(ResourceTypes eResource, int iQuantity,
 			return;
 	}
 
+	vector<CvPlot*> vOwnedTiles;
+	vector<CvPlot*> vOwnedTilesYesArchaeology;
+	vector<CvPlot*> vOwnedTilesNoArchaeology;
+	vector<CvPlot*> vNeutralTiles;
+	vector<CvPlot*> vNeutralTilesYesArchaeology;
+	vector<CvPlot*> vNeutralTilesNoArchaeology;
+
 	// Is this a strategic resource? We only need one tile.
-	CvResourceInfo* pkResourceInfo = GC.getResourceInfo(eResource);
 	bool bStrategicResource = pkResourceInfo->getResourceUsage() == RESOURCEUSAGE_STRATEGIC;
 	int iNumTilesToPlace = bStrategicResource ? 1 : iQuantity;
 	int iNumTilesPlaced = 0;
 
-	CvMap& ImTheMap = GC.getMap();
-	int iNumPlotsInTheWholeWideWorld = ImTheMap.numPlots();
-	vector<CvPlot*> vOwnedTiles;
-	vector<CvPlot*> vOwnedTilesYesArchaeology;
-	vector<CvPlot*> vOwnedTilesNoArchaeology;
-	for (int iI = 0; iI < iNumPlotsInTheWholeWideWorld; iI++)
+	// Priority Bracket 1: Attempt to place the resource on an owned tile near the city
+	int iCityX = pCity->getX();
+	int iCityY = pCity->getY();
+	int iNumWorkablePlots = pCity->GetNumWorkablePlots();
+	for (int iI = 0; iI < iNumWorkablePlots; iI++)
 	{
-		CvPlot* pLoopPlot = ImTheMap.plotByIndexUnchecked(iI);
-		// Must be owned by us
-		if (pLoopPlot->getOwner() != m_eID)
+		CvPlot* pLoopPlot = iterateRingPlots(iCityX, iCityY, iI);
+		if (!pLoopPlot)
 			continue;
 
-		// We've already checked this tile
-		if (pCityToExclude && pCityToExclude->IsWithinWorkRange(pLoopPlot))
+		// Can't be owned by someone else
+		bool bOwned = pLoopPlot->isOwned();
+		if (bOwned && pLoopPlot->getOwner() != m_eID)
 			continue;
 
 		// If we're placing a dig site, there's special validations to check
@@ -13400,19 +13417,33 @@ void CvPlayer::SpawnResourceInOwnedLands(ResourceTypes eResource, int iQuantity,
 			if (!pLoopPlot->isValidMovePlot(BARBARIAN_PLAYER))
 				continue;
 		}
+		// Special artifact logic
 		if (eResource == eArtifact || eResource == eHiddenArtifact)
 		{
 			CvArchaeologyData kArchaeology = pLoopPlot->GetArchaeologicalRecord();
 			if (kArchaeology.m_eArtifactType == NO_GREAT_WORK_ARTIFACT_CLASS)
 			{
-				if (bSarcophagus)
-					vOwnedTilesNoArchaeology.push_back(pLoopPlot); // Avoid existing archaeological records
+				if (bSarcophagus) // Avoid existing archaeological records
+				{
+					if (bOwned)
+						vOwnedTilesNoArchaeology.push_back(pLoopPlot);
+					else
+						vNeutralTilesNoArchaeology.push_back(pLoopPlot);
+				}
 			}
-			else if (!bSarcophagus)
-				vOwnedTilesYesArchaeology.push_back(pLoopPlot); // Prefer existing archaeological records
+			else if (!bSarcophagus) // Prefer existing archaeological records
+			{
+				if (bOwned)
+					vOwnedTilesYesArchaeology.push_back(pLoopPlot);
+				else
+					vNeutralTilesYesArchaeology.push_back(pLoopPlot);
+			}
 		}
 
-		vOwnedTiles.push_back(pLoopPlot);
+		if (bOwned)
+			vOwnedTiles.push_back(pLoopPlot);
+		else
+			vNeutralTiles.push_back(pLoopPlot);
 	}
 
 	// If this is a dig site and we're prioritizing or deprioritizing plots with archaeological records, let's do that now.
@@ -13469,6 +13500,191 @@ void CvPlayer::SpawnResourceInOwnedLands(ResourceTypes eResource, int iQuantity,
 			vOwnedTiles.erase(vOwnedTiles.begin() + uiIndex);
 			iNumTilesPlaced++;
 			if (vOwnedTiles.empty())
+				break;
+		}
+	}
+
+	// Priority Bracket 2: Attempt to place the resource on any owned tile
+	CvMap& ImTheMap = GC.getMap();
+	int iNumPlotsInTheWholeWideWorld = ImTheMap.numPlots();
+	vOwnedTiles.clear();
+	vOwnedTilesYesArchaeology.clear();
+	vOwnedTilesNoArchaeology.clear();
+	for (int iI = 0; iI < iNumPlotsInTheWholeWideWorld; iI++)
+	{
+		CvPlot* pLoopPlot = ImTheMap.plotByIndexUnchecked(iI);
+		// Must be owned by us
+		if (pLoopPlot->getOwner() != m_eID)
+			continue;
+
+		// We've already checked this tile
+		if (pCity->IsWithinWorkRange(pLoopPlot))
+			continue;
+
+		// If we're placing a dig site, there's special validations to check
+		if (eResource == eArtifact)
+		{
+			if (!pLoopPlot->IsEligibleForNormalDigSite(false))
+				continue;
+		}
+		else if (eResource == eHiddenArtifact)
+		{
+			if (!pLoopPlot->IsEligibleForHiddenDigSite(false))
+				continue;
+		}
+		// Normal resource, check canHaveResource() validations and a few other things
+		else
+		{
+			// Only tiles without an existing resource
+			if (pLoopPlot->getResourceType() != NO_RESOURCE)
+				continue;
+
+			if (!pLoopPlot->canHaveResource(eResource))
+				continue;
+
+			if (pLoopPlot->IsNaturalWonder())
+				continue;
+
+			if (pLoopPlot->isMountain())
+				continue;
+
+			FeatureTypes eFeature = pLoopPlot->getFeatureType();
+			if (eFeature == FEATURE_OASIS || (eFeature != NO_FEATURE && GC.getFeatureInfo(eFeature)->isNoImprovement()))
+				continue;
+
+			if (!pLoopPlot->isValidMovePlot(BARBARIAN_PLAYER))
+				continue;
+		}
+		// Special artifact logic
+		if (eResource == eArtifact || eResource == eHiddenArtifact)
+		{
+			CvArchaeologyData kArchaeology = pLoopPlot->GetArchaeologicalRecord();
+			if (kArchaeology.m_eArtifactType == NO_GREAT_WORK_ARTIFACT_CLASS)
+			{
+				if (bSarcophagus)
+					vOwnedTilesNoArchaeology.push_back(pLoopPlot); // Avoid existing archaeological records
+			}
+			else if (!bSarcophagus)
+				vOwnedTilesYesArchaeology.push_back(pLoopPlot); // Prefer existing archaeological records
+		}
+
+		vOwnedTiles.push_back(pLoopPlot);
+	}
+
+	// If this is a dig site and we're prioritizing or deprioritizing plots with archaeological records, let's do that now.
+	if (!vOwnedTilesNoArchaeology.empty() || !vOwnedTilesYesArchaeology.empty())
+	{
+		vector<CvPlot*> vArchaeologyTiles = bSarcophagus ? vOwnedTilesNoArchaeology : vOwnedTilesYesArchaeology;
+		CvWeightedVector<EraTypes> viEras = GC.getGame().GetWeightedArchaeologyErasList();
+
+		while (iNumTilesPlaced < iNumTilesToPlace)
+		{
+			uint uiIndex = GC.getGame().urandLimitExclusive(vArchaeologyTiles.size(), CvSeeder::fromRaw(0x51427b3d).mix(iNumTilesPlaced));
+			CvPlot* pLoopPlot = vArchaeologyTiles[uiIndex];
+
+			// Sarcophagus? Init it as one. Otherwise, if we got here there's already an existing archaeological record, so we don't need to do anything.
+			if (bSarcophagus)
+			{
+				EraTypes eEra = viEras.ChooseByWeight(CvSeeder::fromRaw(0x034f6c94).mix(iNumTilesPlaced));
+				pLoopPlot->AddArchaeologicalRecord(CvTypes::getARTIFACT_SARCOPHAGUS(), eEra, m_eID, NO_PLAYER, /*bIgnoreNormalRestrictions*/ true);
+			}
+
+			pLoopPlot->setResourceType(eResource, 1);
+			vArchaeologyTiles.erase(vArchaeologyTiles.begin() + uiIndex);
+			iNumTilesPlaced++;
+
+			// Remove it from the main plot list too!
+			vector<CvPlot*>::const_iterator it = std::find(vOwnedTiles.begin(), vOwnedTiles.end(), pLoopPlot);
+			vOwnedTiles.erase(it);
+
+			if (vArchaeologyTiles.empty())
+				break;
+		}
+	}
+
+	// Are we done?
+	if (iNumTilesPlaced >= iNumTilesToPlace)
+		return;
+
+	// If not a dig site, or we're out of priority tiles, try the full set of available tiles instead.
+	if (!vOwnedTiles.empty())
+	{
+		while (iNumTilesPlaced < iNumTilesToPlace)
+		{
+			uint uiIndex = GC.getGame().urandLimitExclusive(vOwnedTiles.size(), CvSeeder::fromRaw(0xfcf4ab90).mix(iNumTilesPlaced));
+			CvPlot* pLoopPlot = vOwnedTiles[uiIndex];
+			// If this is an artifact, we need to generate data for it
+			if (eResource == eArtifact || eResource == eHiddenArtifact)
+			{
+				CvWeightedVector<EraTypes> viEras = GC.getGame().GetWeightedArchaeologyErasList();
+				EraTypes eEra = viEras.ChooseByWeight(CvSeeder::fromRaw(0x63e129a3).mix(iNumTilesPlaced));
+				pLoopPlot->AddArchaeologicalRecord(bSarcophagus ? CvTypes::getARTIFACT_SARCOPHAGUS() : CvTypes::getARTIFACT_ANCIENT_RUIN(), eEra, m_eID, NO_PLAYER, /*bIgnoreNormalRestrictions*/ bSarcophagus);
+			}
+
+			pLoopPlot->setResourceType(eResource, bStrategicResource ? iQuantity : 1);
+			vOwnedTiles.erase(vOwnedTiles.begin() + uiIndex);
+			iNumTilesPlaced++;
+			if (vOwnedTiles.empty())
+				break;
+		}
+	}
+
+	// Priority Bracket 3: Attempt to place the resource on a neutral tile within working range of the city
+
+	// If this is a dig site and we're prioritizing or deprioritizing plots with archaeological records, let's do that now.
+	if (!vNeutralTilesNoArchaeology.empty() || !vNeutralTilesYesArchaeology.empty())
+	{
+		vector<CvPlot*> vArchaeologyTiles = bSarcophagus ? vNeutralTilesNoArchaeology : vNeutralTilesYesArchaeology;
+		CvWeightedVector<EraTypes> viEras = GC.getGame().GetWeightedArchaeologyErasList();
+
+		while (iNumTilesPlaced < iNumTilesToPlace)
+		{
+			uint uiIndex = GC.getGame().urandLimitExclusive(vArchaeologyTiles.size(), CvSeeder::fromRaw(0x4d4fb75d).mix(iNumTilesPlaced));
+			CvPlot* pLoopPlot = vArchaeologyTiles[uiIndex];
+
+			// Sarcophagus? Init it as one. Otherwise, if we got here there's already an existing archaeological record, so we don't need to do anything.
+			if (bSarcophagus)
+			{
+				EraTypes eEra = viEras.ChooseByWeight(CvSeeder::fromRaw(0xe9d27544).mix(iNumTilesPlaced));
+				pLoopPlot->AddArchaeologicalRecord(CvTypes::getARTIFACT_SARCOPHAGUS(), eEra, m_eID, NO_PLAYER, /*bIgnoreNormalRestrictions*/ true);
+			}
+
+			pLoopPlot->setResourceType(eResource, 1);
+			vArchaeologyTiles.erase(vArchaeologyTiles.begin() + uiIndex);
+			iNumTilesPlaced++;
+
+			// Remove it from the main plot list too!
+			vector<CvPlot*>::const_iterator it = std::find(vNeutralTiles.begin(), vNeutralTiles.end(), pLoopPlot);
+			vNeutralTiles.erase(it);
+
+			if (vArchaeologyTiles.empty())
+				break;
+		}
+	}
+
+	// Are we done?
+	if (iNumTilesPlaced >= iNumTilesToPlace)
+		return;
+
+	// If not a dig site, or we're out of priority tiles, try the full set of available tiles instead.
+	if (!vNeutralTiles.empty())
+	{
+		while (iNumTilesPlaced < iNumTilesToPlace)
+		{
+			uint uiIndex = GC.getGame().urandLimitExclusive(vNeutralTiles.size(), CvSeeder::fromRaw(0x71b6797f).mix(iNumTilesPlaced));
+			CvPlot* pLoopPlot = vNeutralTiles[uiIndex];
+			// If this is an artifact, we need to generate data for it
+			if (eResource == eArtifact || eResource == eHiddenArtifact)
+			{
+				CvWeightedVector<EraTypes> viEras = GC.getGame().GetWeightedArchaeologyErasList();
+				EraTypes eEra = viEras.ChooseByWeight(CvSeeder::fromRaw(0x743df03b).mix(iNumTilesPlaced));
+				pLoopPlot->AddArchaeologicalRecord(bSarcophagus ? CvTypes::getARTIFACT_SARCOPHAGUS() : CvTypes::getARTIFACT_ANCIENT_RUIN(), eEra, m_eID, NO_PLAYER, /*bIgnoreNormalRestrictions*/ bSarcophagus);
+			}
+
+			pLoopPlot->setResourceType(eResource, bStrategicResource ? iQuantity : 1);
+			vNeutralTiles.erase(vNeutralTiles.begin() + uiIndex);
+			iNumTilesPlaced++;
+			if (vNeutralTiles.empty())
 				break;
 		}
 	}
@@ -13571,133 +13787,7 @@ void CvPlayer::foundCity(int iX, int iY, ReligionTypes eReligion, bool bForce, C
 		if (iQuantity <= 0 || GetNumCitiesFounded() > freeResource.m_iNumCities)
 			continue;
 
-		// Is this a strategic resource? We only need one tile.
-		CvResourceInfo* pkResourceInfo = GC.getResourceInfo(eResource);
-		bool bStrategicResource = pkResourceInfo->getResourceUsage() == RESOURCEUSAGE_STRATEGIC;
-		int iNumTilesToPlace = bStrategicResource ? 1 : iQuantity;
-		int iNumTilesPlaced = 0;
-
-		vector<CvPlot*> vNearbyTiles;
-		vector<CvPlot*> vNearbyTilesNoArchaeology;
-		int iCityX = pCity->getX();
-		int iCityY = pCity->getY();
-		static const ResourceTypes eArtifact = static_cast<ResourceTypes>(GD_INT_GET(ARTIFACT_RESOURCE));
-		static const ResourceTypes eHiddenArtifact = static_cast<ResourceTypes>(GD_INT_GET(HIDDEN_ARTIFACT_RESOURCE));
-		for (int iI = 0; iI < GetNumWorkablePlots(); iI++)
-		{
-			CvPlot* pLoopPlot = iterateRingPlots(iCityX, iCityY, iI);
-			if (!pLoopPlot)
-				continue;
-
-			// Can't be owned by someone else
-			if (pLoopPlot->isOwned() && pLoopPlot->getOwner() != m_eID)
-				continue;
-
-			// If we're placing a dig site, there's special validations to check
-			if (eResource == eArtifact)
-			{
-				if (!pLoopPlot->IsEligibleForNormalDigSite(false))
-					continue;
-			}
-			else if (eResource == eHiddenArtifact)
-			{
-				if (!pLoopPlot->IsEligibleForHiddenDigSite(false))
-					continue;
-			}
-			// Normal resource, check canHaveResource() validations and a few other things
-			else
-			{
-				// Only tiles without an existing resource
-				if (pLoopPlot->getResourceType() != NO_RESOURCE)
-					continue;
-
-				if (!pLoopPlot->canHaveResource(eResource))
-					continue;
-
-				if (pLoopPlot->IsNaturalWonder())
-					continue;
-
-				if (pLoopPlot->isMountain())
-					continue;
-
-				FeatureTypes eFeature = pLoopPlot->getFeatureType();
-				if (eFeature == FEATURE_OASIS || (eFeature != NO_FEATURE && GC.getFeatureInfo(eFeature)->isNoImprovement()))
-					continue;
-
-				if (!pLoopPlot->isValidMovePlot(BARBARIAN_PLAYER))
-					continue;
-			}
-			// We want to avoid placing new dig sites on tiles that have existing archaeological records, but will do so if we must.
-			if (eResource == eArtifact || eResource == eHiddenArtifact)
-			{
-				CvArchaeologyData kArchaeology = pLoopPlot->GetArchaeologicalRecord();
-				if (kArchaeology.m_eArtifactType == NO_GREAT_WORK_ARTIFACT_CLASS)
-					vNearbyTilesNoArchaeology.push_back(pLoopPlot);
-			}
-
-			vNearbyTiles.push_back(pLoopPlot);
-		}
-
-		// If this is a dig site, first try to pick tiles with no archaeological record.
-		if (!vNearbyTilesNoArchaeology.empty())
-		{
-			CvWeightedVector<EraTypes> viEras = GC.getGame().GetWeightedArchaeologyErasList();
-
-			while (iNumTilesPlaced < iNumTilesToPlace)
-			{
-				uint uiIndex = GC.getGame().urandLimitExclusive(vNearbyTilesNoArchaeology.size(), CvSeeder::fromRaw(0x225a3c1c).mix(iNumTilesPlaced));
-				CvPlot* pLoopPlot = vNearbyTilesNoArchaeology[uiIndex];
-
-				// This is an artifact, init it as a Sarcophagus
-				EraTypes eEra = viEras.ChooseByWeight(CvSeeder::fromRaw(0x2dfe39fb).mix(iNumTilesPlaced));
-				pLoopPlot->AddArchaeologicalRecord(CvTypes::getARTIFACT_SARCOPHAGUS(), eEra, m_eID, NO_PLAYER, /*bIgnoreNormalRestrictions*/ true);
-
-				pLoopPlot->setResourceType(eResource, 1);
-				vNearbyTilesNoArchaeology.erase(vNearbyTilesNoArchaeology.begin() + uiIndex);
-				iNumTilesPlaced++;
-
-				// Remove it from the main plot list too!
-				vector<CvPlot*>::const_iterator it = std::find(vNearbyTiles.begin(), vNearbyTiles.end(), pLoopPlot);
-				vNearbyTiles.erase(it);
-
-				if (vNearbyTilesNoArchaeology.empty())
-					break;
-			}
-		}
-
-		// Are we done?
-		if (iNumTilesPlaced >= iNumTilesToPlace)
-			continue;
-
-		// Next: for normal resources, or if all available tiles have archaeological records, try the full set of available tiles instead
-		if (!vNearbyTiles.empty())
-		{
-			while (iNumTilesPlaced < iNumTilesToPlace)
-			{
-				uint uiIndex = GC.getGame().urandLimitExclusive(vNearbyTiles.size(), CvSeeder::fromRaw(0x978a99f7).mix(iNumTilesPlaced));
-				CvPlot* pLoopPlot = vNearbyTiles[uiIndex];
-				// If this is an artifact, init it as a Sarcophagus
-				if (eResource == eArtifact || eResource == eHiddenArtifact)
-				{
-					CvWeightedVector<EraTypes> viEras = GC.getGame().GetWeightedArchaeologyErasList();
-					EraTypes eEra = viEras.ChooseByWeight(CvSeeder::fromRaw(0x13572e90).mix(iNumTilesPlaced));
-					pLoopPlot->AddArchaeologicalRecord(CvTypes::getARTIFACT_SARCOPHAGUS(), eEra, m_eID, NO_PLAYER, /*bIgnoreNormalRestrictions*/ true);
-				}
-
-				pLoopPlot->setResourceType(eResource, bStrategicResource ? iQuantity : 1);
-				vNearbyTiles.erase(vNearbyTiles.begin() + uiIndex);
-				iNumTilesPlaced++;
-				if (vNearbyTiles.empty())
-					break;
-			}
-		}
-
-		// Are we done?
-		if (iNumTilesPlaced >= iNumTilesToPlace)
-			continue;
-
-		// Still not done? Let's try placing it on another tile we own, even if another city owns it.
-		SpawnResourceInOwnedLands(eResource, bStrategicResource ? iQuantity : iNumTilesToPlace - iNumTilesPlaced, /*bSarcophagus*/ true, pCity);
+		SpawnResourceInVicinity(pCity, eResource, iQuantity, /*bSarcophagus*/ true);
 	}
 
 	if (isMajorCiv() && GetNumCitiesFounded() <= 1 && GetPlayerTraits()->StartsWithPantheon())
@@ -15977,6 +16067,10 @@ void CvPlayer::processBuilding(BuildingTypes eBuilding, int iChange, bool bFirst
 
 			BuildingTypes eOtherBuilding = pLoopCity->GetBuildingTypeFromClass(eOtherBuildingClass);
 			if (eOtherBuilding == NO_BUILDING)
+				continue;
+
+			// No Bonus for Obsoleted Building
+			if(GET_TEAM(getTeam()).isObsoleteBuilding(eOtherBuilding))
 				continue;
 
 			CvBuildingEntry* pkOtherBuildingInfo = GC.getBuildingInfo(eOtherBuilding);
@@ -19631,10 +19725,16 @@ int CvPlayer::GetSciencePerTurnFromMinor(PlayerTypes eMinor) const
 
 int CvPlayer::GetYieldPerTurnFromMinors(YieldTypes eYield) const
 {
+	PRECONDITION(eYield >= 0, "eYield expected to be >= 0");
+	PRECONDITION(eYield < NUM_YIELD_TYPES, "eYield expected to be < NUM_YIELD_TYPES");
+
 	return m_aiYieldFromMinors[eYield];
 }
 void CvPlayer::SetYieldPerTurnFromMinors(YieldTypes eYield, int iValue)
 {
+	PRECONDITION(eYield >= 0, "eYield expected to be >= 0");
+	PRECONDITION(eYield < NUM_YIELD_TYPES, "eYield expected to be < NUM_YIELD_TYPES");
+
 	if (iValue != m_aiYieldFromMinors[eYield])
 	{
 		m_aiYieldFromMinors[eYield] = iValue;
@@ -33113,7 +33213,11 @@ void CvPlayer::setTurnActive(bool bNewValue, bool bDoTurn) // R: bDoTurn default
 				GAMEEVENTINVOKE_HOOK(GAMEEVENT_PlayerDoneTurn, GetID());
 			}
 
-			ASSERT(GetEndTurnBlockingType() == NO_ENDTURN_BLOCKING_TYPE, "Expecting the end-turn blocking to be NO_ENDTURN_BLOCKING_TYPE, got %d", GetEndTurnBlockingType());
+			if (!kGame.isGameMultiPlayer() || !kGame.isSimultaneousTeamTurns())
+			{
+				// when playing MP with simultaneous turns and a turn time limit, end turn blockers can still be present when the turn ends
+				ASSERT(GetEndTurnBlockingType() == NO_ENDTURN_BLOCKING_TYPE, "Expecting the end-turn blocking to be NO_ENDTURN_BLOCKING_TYPE, got %d", GetEndTurnBlockingType());
+			}
 			SetEndTurnBlocking(NO_ENDTURN_BLOCKING_TYPE, -1);	// Make sure this is clear so the UI doesn't block when it is not our turn.
 
 			//important: healing and restoration of movement points
@@ -33906,7 +34010,7 @@ void CvPlayer::changeYieldFromDeath(YieldTypes eIndex, int iChange)
 
 		invalidateYieldRankCache(eIndex);
 
-		if(getTeam() == GC.getGame().getActiveTeam())
+		if (getTeam() == GC.getGame().getActiveTeam())
 		{
 			GC.GetEngineUserInterface()->setDirty(CityInfo_DIRTY_BIT, true);
 		}
@@ -33943,7 +34047,7 @@ void CvPlayer::ChangeYieldFromPillage(YieldTypes eIndex, int iChange)
 int CvPlayer::GetYieldFromVictory(YieldTypes eIndex) const
 {
 	VALIDATE_OBJECT();
-		PRECONDITION(eIndex >= 0, "eIndex expected to be >= 0");
+	PRECONDITION(eIndex >= 0, "eIndex expected to be >= 0");
 	PRECONDITION(eIndex < NUM_YIELD_TYPES, "eIndex expected to be < NUM_YIELD_TYPES");
 	return m_aiYieldFromVictory[eIndex];
 }
@@ -42369,6 +42473,10 @@ void CvPlayer::processPolicies(PolicyTypes ePolicy, int iChange)
 
 			int iBuildingCount = pLoopCity->GetCityBuildings()->GetNumBuilding(eBuilding);
 			if (iBuildingCount <= 0)
+				continue;
+
+			// No Bonus for Obsoleted Building
+			if(GET_TEAM(getTeam()).isObsoleteBuilding(eBuilding))
 				continue;
 
 			const CvBuildingEntry* pkBuildingInfo = GC.getBuildingInfo(eBuilding);

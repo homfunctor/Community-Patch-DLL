@@ -313,7 +313,7 @@ public:
 	int GetChainLength(BuildingTypes eBuilding);
 
 	void AwardFreeBuildings(CvCity* pCity); // slewis - broken out so that Venice can get free buildings when they purchase something
-	void SpawnResourceInOwnedLands(ResourceTypes eResource, int iQuantity, bool bSarcophagus = false, CvCity* pCityToExclude = NULL);
+	void SpawnResourceInVicinity(CvCity* pCity, ResourceTypes eResource, int iQuantity, bool bSarcophagus);
 
 	bool canFoundCityExt(int iX, int iY, bool bIgnoreDistanceToExistingCities, bool bIgnoreHappiness) const;
 	bool canFoundCity(int iX, int iY) const;
@@ -4082,7 +4082,6 @@ SYNC_ARCHIVE_VAR(int, m_iNumHistoricEvent)
 SYNC_ARCHIVE_VAR(int, m_iSingleLeagueVotes)
 SYNC_ARCHIVE_VAR(int, m_iMonopolyModFlat)
 SYNC_ARCHIVE_VAR(int, m_iMonopolyModPercent)
-SYNC_ARCHIVE_VAR(int, m_iCachedValueOfPeaceWithHuman)
 SYNC_ARCHIVE_VAR(int, m_iFaithPurchaseCooldown)
 SYNC_ARCHIVE_VAR(int, m_iCSAllies)
 SYNC_ARCHIVE_VAR(int, m_iCSFriends)
