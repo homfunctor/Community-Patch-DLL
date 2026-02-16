@@ -673,10 +673,14 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(CvPlot* pPlot, const CvPlayer* pPl
     // Custom code for Chukchi auto-play games
     // better approach would be to add a lua boolean like WantsSnow, or get info
     // from Civilization_Start_Prefer_Snow
+    // again, this is a nasty hack and needs to be improved one day
     static ImprovementTypes eChukchiImprovement =
         (ImprovementTypes)GC.getInfoTypeForString("IMPROVEMENT_CHU_UI_YARANGA",
                                                   true);
-    if (eChukchiImprovement != NO_IMPROVEMENT) {
+    static ImprovementTypes eInuitImprovement =
+        (ImprovementTypes)GC.getInfoTypeForString("IMPROVEMENT_INUKSUK",
+                                                  true);
+     if (eChukchiImprovement != NO_IMPROVEMENT) {
       CvImprovementEntry *pkEntry = GC.getImprovementInfo(eChukchiImprovement);
       if (pkEntry != NULL && pkEntry->IsSpecificCivRequired()) {
         CivilizationTypes eCiv = pkEntry->GetRequiredCivilization();
@@ -688,7 +692,21 @@ int CvSiteEvaluatorForSettler::PlotFoundValue(CvPlot* pPlot, const CvPlayer* pPl
           vQualifiersPositive.push_back("(C) chukchi");
         }
       }
-    }	}
+    }
+
+    if (eInuitImprovement != NO_IMPROVEMENT) {
+      CvImprovementEntry *pkEntry = GC.getImprovementInfo(eInuitImprovement);
+      if (pkEntry != NULL && pkEntry->IsSpecificCivRequired()) {
+        CivilizationTypes eCiv = pkEntry->GetRequiredCivilization();
+        if (eCiv == pPlayer->getCivilizationType()) {
+            iCivModifier += iIceCount * m_iChukchiMultiplier;
+            iCivModifier += iSnowCount * m_iChukchiMultiplier;
+            iCivModifier += iTundraCount * m_iChukchiMultiplier;
+        if (pDebug)
+          vQualifiersPositive.push_back("(C) inuit");
+        }
+      }
+    }
 
 	// Finally, look at the city plot itself
 	if (pPlot->IsNaturalWonder())
@@ -921,7 +939,6 @@ int CvCitySiteEvaluator::PlotFertilityValue(CvPlot* pPlot, const CvPlayer* pPlay
 	}
 
 	if(rtnValue < 0) rtnValue = 0;
-
 	return rtnValue;
 }
 
